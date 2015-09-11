@@ -33,10 +33,10 @@ sba_feeds = ["http://smallbusiness.foxbusiness.com/home/feed/rss/",
 # entries as previously processed); for testing purposes only.
 
 # COMMENT OUT AFTER INITIAL RUN
-last_update_time = dict()
+#last_update_time = dict()
 
 # UNCOMMENT AFTER INITIAL RUN
-# last_update_time = pickle.load(open("last_update_time.txt", "rb"))
+last_update_time = pickle.load(open("last_update_time.txt", "rb"))
 
 for feed in sba_feeds:
 
@@ -45,7 +45,7 @@ for feed in sba_feeds:
     current_update_time = time.gmtime()
 
     # COMMENT OUT AFTER INITIAL RUN
-    last_update_time.update([(feed, 0)])
+    # last_update_time.update([(feed, 0)])
 
     for entry in d.entries:
         print entry.published_parsed >= last_update_time[feed]
@@ -64,20 +64,48 @@ for feed in sba_feeds:
             article_text = article_html.get_text(" ").encode('utf-8')
             article_url = r.url
             article_title = Document(r.text).short_title().encode('utf-8')
-            print "article_title"
+            print article_title
             # Place relevant info into document for easy ES insertion.
             # NOTE: "published" field is not currently processed; date format
             # differs between Google News and Alert feeds
-            doc = {"doc": {"article_title": article_title,
-                           "article_url": article_url,
-                           "article_text": article_text,
-                           "published": entry.published}}
+            es.index(index='temp2',
+                 doc_type='temp2',
+                 id=1,
+                 refresh=True,
+                 body={
+                     "text": article_text,
+                     "title":article_title
+                 })
+            result=es.search_exists(
+                index='temp2',
+                doc_type='temp2',
+                body={
+                    'query':{
+                        'bool':{
+                            'should':[
+                                {
+                                'terms':{
+                                    'text':['small business','small businesses','loans','grant','grants','loan','pay','budget','debt','money', 'save','spend','invest','tax','taxes','dollar','apply','application','paid','credit','interest','bank','debtor','repay','borrow','lend','lender','federal']}
+                                }
+                                ],
+                            'minimum_should_match':2
+                        }
+                    }
+                }
+            )
 
-            # Insert document into ES (change as necessary)
-            es.index(index="news-test",
-                     doc_type="rss",
-                     body=doc)
-    last_update_time.update([(feed, current_update_time)])
+            if result==True:
+                print 'MATCH!'
+                doc = {"doc": {"article_title": article_title,
+                               "article_url": article_url,
+                               "article_text": article_text,
+                               "published": entry.published}}
+
+                # Insert document into ES (change as necessary)
+                es.index(index="news-test",
+                         doc_type="rss",
+                         body=doc)
+                last_update_time.update([(feed, current_update_time)])
     print "Feed Complete!"
 
 pickle.dump(last_update_time, open("last_update_time.txt", "wb"))
